@@ -36,7 +36,7 @@ public class MessageProcessor implements IMqttMessageHandler {
         MSG_MONITORING_INTERVAL = config.getInt("application.msgMonitoringInterval");
         log.info("Using in-flight alert threshold of {} with monitoring interval of {} messages", IN_FLIGHT_ALERT_THRESHOLD, MSG_MONITORING_INTERVAL);
 
-        IMapperFactory factory = new RawMessageFactory();
+        IMapperFactory factory = new HfpV1MessageFactory();
         mapper = factory.createMapper();
         properties = factory.properties();
     }
@@ -65,7 +65,7 @@ public class MessageProcessor implements IMqttMessageHandler {
 
             byte[] payload = message.getPayload();
             if (mapper != null) {
-                payload = mapper.apply(topic, payload);
+                payload = mapper.apply(null, payload);
             }
 
             if (payload != null) {
