@@ -86,7 +86,7 @@ public class MessageProcessor implements IMqttMessageHandler {
 
     }
 
-    private String downgradeTopic(final String topic) throws Exception {
+    public static String downgradeTopic(final String topic) throws Exception {
         final String[] parts = topic.split("/", -1); // -1 to include empty substrings
         final int versionIndex = HfpParser.findVersionIndex(parts);
         if (versionIndex < 0) {
