@@ -1,4 +1,4 @@
-package fi.hsl.pulsar.mqtt;
+package fi.hsl.transitdata.hfp.downgrader;
 
 import fi.hsl.common.mqtt.proto.Mqtt;
 import fi.hsl.common.transitdata.TransitdataProperties;

@@ -1,15 +1,14 @@
-package fi.hsl.pulsar.mqtt;
+package fi.hsl.transitdata.hfp.downgrader;
 
 import com.typesafe.config.Config;
-import fi.hsl.common.pulsar.PulsarApplication;
+import fi.hsl.common.hfp.HfpParser;
 
-import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.TypedMessageBuilder;
 import org.eclipse.paho.client.mqttv3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
@@ -18,8 +17,6 @@ public class MessageProcessor implements IMqttMessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MessageProcessor.class);
 
-    final Producer<byte[]> producer;
-    final PulsarApplication pulsarApp;
     final MqttConnector connector;
 
     private boolean shutdownInProgress = false;
@@ -32,9 +29,7 @@ public class MessageProcessor implements IMqttMessageHandler {
     private final BiFunction<String, byte[], byte[]> mapper;
     private final Map<String, String> properties;
 
-    public MessageProcessor(Config config, PulsarApplication pulsarApp, MqttConnector connector) {
-        this.pulsarApp = pulsarApp;
-        this.producer = pulsarApp.getContext().getProducer();
+    public MessageProcessor(Config config, MqttConnector connector) {
         this.connector = connector;
 
         IN_FLIGHT_ALERT_THRESHOLD = config.getInt("application.inFlightAlertThreshold");
@@ -47,7 +42,7 @@ public class MessageProcessor implements IMqttMessageHandler {
     }
 
     @Override
-    public void handleMessage(String topic, MqttMessage message) throws Exception {
+    public void handleMessage(final String topic, final MqttMessage message) throws Exception {
         try {
             // This method is invoked synchronously by the MQTT client (via our connector), so all events arrive in the same thread
             // https://www.eclipse.org/paho/files/javadoc/org/eclipse/paho/client/mqttv3/MqttCallback.html
@@ -64,12 +59,9 @@ public class MessageProcessor implements IMqttMessageHandler {
 
             // Current implementation uses the latter approach
 
-            if (!producer.isConnected()) {
-                log.error("Pulsar Producer is no longer connected. Exiting application");
-                close(true);
+            if (!connector.client.isConnected()) {
+                throw new Exception("MQTT client is no longer connected");
             }
-
-            long now = System.currentTimeMillis();
 
             byte[] payload = message.getPayload();
             if (mapper != null) {
@@ -77,38 +69,11 @@ public class MessageProcessor implements IMqttMessageHandler {
             }
 
             if (payload != null) {
-                TypedMessageBuilder<byte[]> msgBuilder = producer.newMessage()
-                        .eventTime(now)
-                        .value(payload);
-
-                if (properties != null) {
-                    msgBuilder.properties(properties);
-                }
-
-                msgBuilder.sendAsync()
-                        .whenComplete((MessageId id, Throwable t) -> {
-                            if (t != null) {
-                                log.error("Failed to send Pulsar message", t);
-                                //Let's close everything and restart
-                                close(true);
-                            }
-                            else {
-                                inFlightCounter.decrementAndGet();
-                            }
-                        });
-
-                int inFlight = inFlightCounter.incrementAndGet();
-                if (++msgCounter % MSG_MONITORING_INTERVAL == 0) {
-                    if (inFlight < 0 || inFlight > IN_FLIGHT_ALERT_THRESHOLD) {
-                        log.error("Pulsar insert cannot keep up with the MQTT feed! In flight: {}", inFlight);
-                    }
-                    else {
-                        log.info("Currently messages in flight: {}", inFlight);
-                    }
-                }
+                final String downgradedTopic = downgradeTopic(topic);
+                publish(downgradedTopic, payload);
             }
             else {
-                log.warn("Cannot forward Message to Pulsar because (mapped) content is null");
+                log.warn("Cannot forward message because (mapped) content is null");
             }
 
         }
@@ -119,6 +84,60 @@ public class MessageProcessor implements IMqttMessageHandler {
             close(true);
         }
 
+    }
+
+    private String downgradeTopic(final String topic) throws Exception {
+        final String[] parts = topic.split("/", -1); // -1 to include empty substrings
+        final int versionIndex = HfpParser.findVersionIndex(parts);
+        if (versionIndex < 0) {
+            throw new Exception("Failed to find topic version from topic: " + topic);
+        }
+        final String versionStr = parts[versionIndex];
+        if (!versionStr.equals("v2")) {
+            throw new Exception("Topic version is not v2: " + topic);
+        }
+        if (parts.length != 19) {
+            throw new Exception("Topic has unexpected number of parts: " + topic);
+        }
+        parts[versionIndex] = "v1";
+        final String[] start = Arrays.copyOfRange(parts, 0, 5);
+        final String[] end = Arrays.copyOfRange(parts, 6, parts.length);
+        return String.join("/", start) + "/" + String.join("/", end);
+    }
+
+    private void publish(final String topic, final byte[] payload) throws Exception {
+        try {
+            final MqttMessage message = new MqttMessage(payload);
+            message.setQos(connector.qos);
+            message.setRetained(connector.retainMessage);
+            connector.client.publish(topic, message, null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    inFlightCounter.decrementAndGet();
+                    log.debug("MQTT message delivered");
+                }
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    List<String> topics = Arrays.asList(asyncActionToken.getTopics());
+                    String msg = "Failed to send message [" + asyncActionToken.getMessageId() + "] to topics " + String.join(", ", topics);
+                    log.error(msg, exception);
+                }
+            });
+            int inFlight = inFlightCounter.incrementAndGet();
+            if (++msgCounter % MSG_MONITORING_INTERVAL == 0) {
+                if (inFlight < 0 || inFlight > IN_FLIGHT_ALERT_THRESHOLD) {
+                    log.error("Pulsar insert cannot keep up with the MQTT feed! In flight: {}", inFlight);
+                }
+                else {
+                    log.info("Currently messages in flight: {}", inFlight);
+                }
+            }
+        }
+        catch (Exception e) {
+            log.error("Error publishing MQTT message", e);
+            throw e;
+        }
     }
 
     @Override
@@ -140,8 +159,6 @@ public class MessageProcessor implements IMqttMessageHandler {
             log.info("MQTT connection closed");
         }
 
-        pulsarApp.close();
         log.info("Pulsar connection closed");
-
     }
 }

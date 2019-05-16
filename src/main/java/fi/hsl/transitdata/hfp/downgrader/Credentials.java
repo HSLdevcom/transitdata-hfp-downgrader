@@ -1,4 +1,4 @@
-package fi.hsl.pulsar.mqtt;
+package fi.hsl.transitdata.hfp.downgrader;
 
 import com.typesafe.config.Config;
 import org.slf4j.Logger;

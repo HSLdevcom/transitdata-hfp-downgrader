@@ -1,4 +1,4 @@
-package fi.hsl.pulsar.mqtt;
+package fi.hsl.transitdata.hfp.downgrader;
 
 import java.util.Map;
 import java.util.function.BiFunction;

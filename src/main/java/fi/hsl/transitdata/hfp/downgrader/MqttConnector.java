@@ -1,4 +1,4 @@
-package fi.hsl.pulsar.mqtt;
+package fi.hsl.transitdata.hfp.downgrader;
 
 import com.typesafe.config.Config;
 import org.eclipse.paho.client.mqttv3.*;
@@ -14,20 +14,22 @@ public class MqttConnector implements MqttCallback {
     private static final Logger log = LoggerFactory.getLogger(MqttConnector.class);
 
     private final String mqttTopic;
-    private final int qos;
+    public final int qos;
     private final String clientId;
     private final String broker;
+    public final boolean retainMessage;
 
     private final MqttConnectOptions connectOptions;
     private final LinkedList<IMqttMessageHandler> handlers = new LinkedList<>();
 
-    private MqttClient mqttClient;
+    public MqttAsyncClient client;
 
     public MqttConnector(Config config, Optional<Credentials> maybeCredentials) {
         mqttTopic = config.getString("mqtt-broker.topic");
         qos = config.getInt("mqtt-broker.qos");
         clientId = createClientId(config);
         broker = config.getString("mqtt-broker.host");
+        retainMessage = config.getBoolean("mqtt-broker.retainMessage");
 
         final int maxInFlight = config.getInt("mqtt-broker.maxInflight");
         final boolean cleanSession = config.getBoolean("mqtt-broker.cleanSession");
@@ -60,17 +62,24 @@ public class MqttConnector implements MqttCallback {
     }
 
     public void connect() throws Exception {
-        MqttClient client = null;
         try {
             //Let's use memory persistance to optimize throughput.
             MemoryPersistence memoryPersistence = new MemoryPersistence();
 
-            client = new MqttClient(broker, clientId, memoryPersistence);
+            client = new MqttAsyncClient(broker, clientId, memoryPersistence);
             client.setCallback(this); //Let's add the callback before connecting so we won't lose any messages
 
             log.info(String.format("Connecting to mqtt broker %s", broker));
-            IMqttToken token = client.connectWithResult(connectOptions);
+            final IMqttToken token = client.connect(connectOptions, null, new IMqttActionListener() {
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    log.info("Connected");
+                }
 
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    log.error("Connection failed: ", exception);
+                }
+            });
+            token.waitForCompletion();
             log.info("Connection to MQTT completed? {}", token.isComplete());
             if (token.getException() != null) {
                 throw token.getException();
@@ -87,8 +96,7 @@ public class MqttConnector implements MqttCallback {
 
         try {
             log.info("Subscribing to topic {} with QoS {}", mqttTopic, qos);
-            mqttClient = client;
-            mqttClient.subscribe(mqttTopic, qos);
+            client.subscribe(mqttTopic, qos);
         }
         catch (Exception e) {
             log.error("Error subscribing to MQTT broker", e);
@@ -117,16 +125,16 @@ public class MqttConnector implements MqttCallback {
     public void deliveryComplete(IMqttDeliveryToken token) {}
 
     public void close() {
-        if (mqttClient == null) {
+        if (client == null) {
             log.warn("Cannot close mqtt connection since it's null");
             return;
         }
         try {
             log.info("Closing MqttConnector resources");
             //Paho doesn't close the connection threads unless we first disconnect and then force-close it.
-            mqttClient.disconnectForcibly(5000L);
-            mqttClient.close(true);
-            mqttClient = null;
+            client.disconnectForcibly(5000L);
+            client.close(true);
+            client = null;
         }
         catch (Exception e) {
             log.error("Failed to close MQTT client connection", e);
