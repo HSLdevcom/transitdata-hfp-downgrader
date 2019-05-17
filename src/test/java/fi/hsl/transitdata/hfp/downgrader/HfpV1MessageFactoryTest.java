@@ -2,6 +2,8 @@ package fi.hsl.transitdata.hfp.downgrader;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -39,14 +41,28 @@ public class HfpV1MessageFactoryTest {
 
         final BiFunction<String, byte[], byte[]> mapper = new HfpV1MessageFactory().createMapper();
         final byte[] mapped = mapper.apply(null, payload);
-
         assertNotNull(mapped);
 
-        ObjectMapper objectMapper = new ObjectMapper();
-        JsonNode originalJson = objectMapper.readTree(payload);
-        JsonNode mappedJson = objectMapper.readTree(mapped);
+        final ObjectMapper objectMapper = new ObjectMapper();
+        final JsonNode originalJson = objectMapper.readTree(payload);
+        final JsonNode mappedJson = objectMapper.readTree(mapped);
+        final JsonNode downgradedOriginalJson = downgradeHfpV2Payload(originalJson);
 
         assertFalse(originalJson.equals(mappedJson));
+        assertTrue(downgradedOriginalJson.equals(mappedJson));
+    }
+
+    private JsonNode downgradeHfpV2Payload(final JsonNode hfpV2Payload) {
+        JsonNode copy = hfpV2Payload.deepCopy();
+        final JsonNodeFactory factory = JsonNodeFactory.instance;
+        ObjectNode vp = (ObjectNode) copy.get("VP");
+        vp.remove("loc");
+        vp.remove("stop");
+        vp.remove("route");
+        vp.remove("occu");
+        vp.set("odo", factory.numberNode(vp.get("odo").intValue()));
+        vp.set("tst", factory.textNode(vp.get("tst").asText().replaceAll("\\.\\d{3}Z$", "Z")));
+        return copy;
     }
 
     private String readJsonFile(final String filename) throws IOException {
