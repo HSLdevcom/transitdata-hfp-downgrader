@@ -17,7 +17,8 @@ public class MessageProcessor implements IMqttMessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MessageProcessor.class);
 
-    final MqttConnector connector;
+    final MqttConnector connectorIn;
+    final MqttConnector connectorOut;
 
     private boolean shutdownInProgress = false;
     private final AtomicInteger inFlightCounter = new AtomicInteger(0);
@@ -29,8 +30,9 @@ public class MessageProcessor implements IMqttMessageHandler {
     private final BiFunction<String, byte[], byte[]> mapper;
     private final Map<String, String> properties;
 
-    public MessageProcessor(Config config, MqttConnector connector) {
-        this.connector = connector;
+    public MessageProcessor(Config config, MqttConnector connectorIn, MqttConnector connectorOut) {
+        this.connectorIn = connectorIn;
+        this.connectorOut = connectorOut;
 
         IN_FLIGHT_ALERT_THRESHOLD = config.getInt("application.inFlightAlertThreshold");
         MSG_MONITORING_INTERVAL = config.getInt("application.msgMonitoringInterval");
@@ -59,7 +61,7 @@ public class MessageProcessor implements IMqttMessageHandler {
 
             // Current implementation uses the latter approach
 
-            if (!connector.client.isConnected()) {
+            if (!connectorIn.client.isConnected() || !connectorOut.client.isConnected()) {
                 throw new Exception("MQTT client is no longer connected");
             }
 
@@ -96,9 +98,6 @@ public class MessageProcessor implements IMqttMessageHandler {
         if (!versionStr.equals("v2")) {
             throw new Exception("Topic version is not v2: " + topic);
         }
-        if (parts.length != 19) {
-            throw new Exception("Topic has unexpected number of parts: " + topic);
-        }
         parts[versionIndex] = "v1";
         final String[] start = Arrays.copyOfRange(parts, 0, 5);
         final String[] end = Arrays.copyOfRange(parts, 6, parts.length);
@@ -108,9 +107,9 @@ public class MessageProcessor implements IMqttMessageHandler {
     private void publish(final String topic, final byte[] payload) throws Exception {
         try {
             final MqttMessage message = new MqttMessage(payload);
-            message.setQos(connector.qos);
-            message.setRetained(connector.retainMessage);
-            connector.client.publish(topic, message, null, new IMqttActionListener() {
+            message.setQos(connectorOut.qos);
+            message.setRetained(connectorOut.retainMessage);
+            connectorOut.client.publish(topic, message, null, new IMqttActionListener() {
                 @Override
                 public void onSuccess(IMqttToken asyncActionToken) {
                     inFlightCounter.decrementAndGet();
@@ -155,7 +154,8 @@ public class MessageProcessor implements IMqttMessageHandler {
         log.warn("Closing MessageProcessor resources");
         //Let's first close the MQTT to stop the event stream.
         if (closeMqtt) {
-            connector.close();
+            connectorIn.close();
+            connectorOut.close();
             log.info("MQTT connection closed");
         }
 

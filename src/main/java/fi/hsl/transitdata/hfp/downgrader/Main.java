@@ -14,27 +14,35 @@ public class Main {
     public static void main(String[] args) {
         log.info("Launching transitdata-hfp-downgrader");
 
-        MqttConnector connector = null;
+        MqttConnector connectorIn = null;
+        MqttConnector connectorOut = null;
+
         try {
-            Config config = ConfigParser.createConfig();
-            Optional<Credentials> credentials = Credentials.readMqttCredentials(config);
+            final Config config = ConfigParser.createConfig();
+            final Optional<Credentials> credentialsIn = Credentials.readMqttCredentials(config, "mqtt-broker-in");
+            final Optional<Credentials> credentialsOut = Credentials.readMqttCredentials(config, "mqtt-broker-out");
 
             log.info("Configurations read, connecting.");
 
-            connector = new MqttConnector(config, credentials);
+            connectorIn = new MqttConnector(config, "mqtt-broker-in", credentialsIn);
+            connectorOut = new MqttConnector(config, "mqtt-broker-out", credentialsOut);
 
-            MessageProcessor processor = new MessageProcessor(config, connector);
+            final MessageProcessor processor = new MessageProcessor(config, connectorIn, connectorOut);
             //Let's subscribe to connector before connecting so we'll get all the events.
-            connector.subscribe(processor);
+            connectorIn.subscribe(processor);
 
-            connector.connect();
+            connectorIn.connect();
+            connectorOut.connect();
 
             log.info("Connections established, let's process some messages");
         }
         catch (Exception e) {
             log.error("Exception at main", e);
-            if (connector != null) {
-                connector.close();
+            if (connectorIn != null) {
+                connectorIn.close();
+            }
+            if (connectorOut != null) {
+                connectorOut.close();
             }
         }
 

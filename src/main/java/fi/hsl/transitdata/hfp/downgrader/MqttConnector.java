@@ -1,6 +1,7 @@
 package fi.hsl.transitdata.hfp.downgrader;
 
 import com.typesafe.config.Config;
+import com.typesafe.config.ConfigException;
 import org.eclipse.paho.client.mqttv3.*;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.slf4j.Logger;
@@ -13,7 +14,7 @@ import java.util.UUID;
 public class MqttConnector implements MqttCallback {
     private static final Logger log = LoggerFactory.getLogger(MqttConnector.class);
 
-    private final String mqttTopic;
+    private String mqttTopic;
     public final int qos;
     private final String clientId;
     private final String broker;
@@ -24,15 +25,19 @@ public class MqttConnector implements MqttCallback {
 
     public MqttAsyncClient client;
 
-    public MqttConnector(Config config, Optional<Credentials> maybeCredentials) {
-        mqttTopic = config.getString("mqtt-broker.topic");
-        qos = config.getInt("mqtt-broker.qos");
-        clientId = createClientId(config);
-        broker = config.getString("mqtt-broker.host");
-        retainMessage = config.getBoolean("mqtt-broker.retainMessage");
+    public MqttConnector(final Config config, final String mqttConfigRoot, final Optional<Credentials> maybeCredentials) {
+        try {
+            mqttTopic = config.getString(mqttConfigRoot + ".topic");
+        } catch (ConfigException.Missing e) {
+            log.warn("Topic config is missing {}", mqttConfigRoot + ".topic");
+        }
+        qos = config.getInt(mqttConfigRoot + ".qos");
+        clientId = createClientId(config, mqttConfigRoot);
+        broker = config.getString(mqttConfigRoot + ".host");
+        retainMessage = config.getBoolean(mqttConfigRoot + ".retainMessage");
 
-        final int maxInFlight = config.getInt("mqtt-broker.maxInflight");
-        final boolean cleanSession = config.getBoolean("mqtt-broker.cleanSession");
+        final int maxInFlight = config.getInt(mqttConfigRoot + ".maxInflight");
+        final boolean cleanSession = config.getBoolean(mqttConfigRoot + ".cleanSession");
 
         connectOptions = new MqttConnectOptions();
         connectOptions.setCleanSession(cleanSession);
@@ -46,9 +51,9 @@ public class MqttConnector implements MqttCallback {
         connectOptions.setConnectionTimeout(10);
     }
 
-    String createClientId(Config config) {
-        String clientId = config.getString("mqtt-broker.clientId");
-        if (config.getBoolean("mqtt-broker.addRandomnessToClientId")) {
+    String createClientId(final Config config, final String mqttConfigRoot) {
+        String clientId = config.getString(mqttConfigRoot + ".clientId");
+        if (config.getBoolean(mqttConfigRoot + ".addRandomnessToClientId")) {
             clientId += "-" + UUID.randomUUID().toString().substring(0, 8);
         }
         return clientId;
@@ -94,14 +99,15 @@ public class MqttConnector implements MqttCallback {
             throw e;
         }
 
-        try {
-            log.info("Subscribing to topic {} with QoS {}", mqttTopic, qos);
-            client.subscribe(mqttTopic, qos);
-        }
-        catch (Exception e) {
-            log.error("Error subscribing to MQTT broker", e);
-            close();
-            throw e;
+        if (mqttTopic != null) {
+            try {
+                log.info("Subscribing to topic {} with QoS {}", mqttTopic, qos);
+                client.subscribe(mqttTopic, qos);
+            } catch (Exception e) {
+                log.error("Error subscribing to MQTT broker", e);
+                close();
+                throw e;
+            }
         }
     }
 
