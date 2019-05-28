@@ -1,9 +1,8 @@
-[![Build Status](https://travis-ci.org/HSLdevcom/mqtt-pulsar-gateway.svg?branch=master)](https://travis-ci.org/HSLdevcom/mqtt-pulsar-gateway)
+[![Build Status](https://travis-ci.org/HSLdevcom/transitdata-hfp-downgrader.svg?branch=master)](https://travis-ci.org/HSLdevcom/transitdata-hfp-downgrader)
 
 ## Description
 
-Application for reading data from MQTT topic and feeding it into Pulsar topic. 
-This application doesn't care about the payload, it just transfers the bytes.
+Application for reading HFP v2 data from MQTT broker and feeding it back into MQTT broker as HFP v1 data.
 
 ## Building
 
@@ -23,19 +22,14 @@ Either use released versions from public maven repository or build your own and 
 
 - Run [this script](build-image.sh) to build the Docker image
 
-
 ## Running
 
 Requirements:
-- Pulsar Cluster
-  - By default uses localhost, override host in PULSAR_HOST if needed.
-    - Tip: f.ex if running inside Docker in OSX set `PULSAR_HOST=host.docker.internal` to connect to the parent machine
-  - You can use [this script](https://github.com/HSLdevcom/transitdata/blob/master/bin/pulsar/pulsar-up.sh) to launch it as Docker container
 - Connection to an external MQTT server.
   - Configure username and password via files
     - Set filepath for username via env variable FILEPATH_USERNAME_SECRET, default is `/run/secrets/mqtt_broker_username`
     - Set filepath for password via env variable FILEPATH_PASSWORD_SECRET, default is `/run/secrets/mqtt_broker_password`
-  - Mandatory: Set mqtt-topic via env variable MQTT_TOPIC
+  - Mandatory: Set HFP v1 MQTT topic via env variable MQTT_TOPIC
   - Remember to use a unique MQTT client-id's if you have multiple instances connected to a single broker.
 
 All other configuration options are configured in the [config file](src/main/resources/environment.conf)

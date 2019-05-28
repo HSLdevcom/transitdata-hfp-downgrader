@@ -1,4 +1,4 @@
-package fi.hsl.pulsar.mqtt;
+package fi.hsl.transitdata.hfp.downgrader;
 
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
