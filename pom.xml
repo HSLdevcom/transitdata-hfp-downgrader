@@ -1,7 +1,7 @@
 <project>
     <modelVersion>4.0.0</modelVersion>
     <groupId>fi.hsl.transitlog</groupId>
-    <artifactId>mqtt-pulsar-gateway</artifactId>
+    <artifactId>transitdata-hfp-downgrader</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
@@ -9,7 +9,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <common.version>1.0.0</common.version>
+        <common.version>1.0.6</common.version>
         <paho.version>1.2.0</paho.version>
     </properties>
 
@@ -47,7 +47,7 @@
     </dependencies>
 
     <build>
-        <finalName>mqtt-pulsar-gateway</finalName>
+        <finalName>transitdata-hfp-downgrader</finalName>
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
@@ -70,7 +70,7 @@
                             <archiveBaseDirectory>${project.basedir}</archiveBaseDirectory>
                             <archive>
                                 <manifest>
-                                    <mainClass>fi.hsl.pulsar.mqtt.Main</mainClass>
+                                    <mainClass>fi.hsl.transitdata.hfp.downgrader.Main</mainClass>
                                 </manifest>
                             </archive>
                             <descriptorRefs>
