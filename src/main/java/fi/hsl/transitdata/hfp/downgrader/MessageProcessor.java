@@ -61,9 +61,13 @@ public class MessageProcessor implements IMqttMessageHandler {
 
             // Current implementation uses the latter approach
 
-            if (!connectorIn.client.isConnected() || !connectorOut.client.isConnected()) {
-                throw new Exception("MQTT client is no longer connected");
+            if (!connectorIn.client.isConnected()) {
+                throw new Exception("MQTT client (in) is no longer connected");
             }
+            if (!connectorOut.client.isConnected()) {
+                throw new Exception("MQTT client (out) is no longer connected");
+            }
+
 
             byte[] payload = message.getPayload();
             if (mapper != null) {
