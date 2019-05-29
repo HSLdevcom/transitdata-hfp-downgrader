@@ -31,8 +31,16 @@ public class Main {
             //Let's subscribe to connector before connecting so we'll get all the events.
             connectorIn.subscribe(processor);
 
-            connectorIn.connect();
             connectorOut.connect();
+            final long now = System.currentTimeMillis();
+            final long timeout = 10000; // 10 seconds
+            while (!connectorOut.client.isConnected()) {
+                if (System.currentTimeMillis() - now > timeout) {
+                    throw new Exception("Failed to connect MQTT client (out) within timeout");
+                }
+                Thread.sleep(1000);
+            }
+            connectorIn.connect();
 
             log.info("Connections established, let's process some messages");
         }
@@ -45,6 +53,5 @@ public class Main {
                 connectorOut.close();
             }
         }
-
     }
 }
