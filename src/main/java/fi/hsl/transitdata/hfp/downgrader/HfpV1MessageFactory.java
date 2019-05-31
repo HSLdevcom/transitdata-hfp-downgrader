@@ -26,7 +26,7 @@ public class HfpV1MessageFactory implements IMapperFactory {
                 final Instant instant = Instant.parse(data.tst).truncatedTo(ChronoUnit.SECONDS);
                 data.tst = DateTimeFormatter.ISO_INSTANT.format(instant);
                 return parser.serializeToByteArray(json);
-            } catch (final IOException e) {
+            } catch (final Exception e) {
                 log.error("Failed to parse HFP data to JSON", e);
             }
             return null;

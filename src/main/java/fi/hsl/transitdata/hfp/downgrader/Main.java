@@ -14,43 +14,28 @@ public class Main {
     public static void main(String[] args) {
         log.info("Launching transitdata-hfp-downgrader");
 
-        MqttConnector connectorIn = null;
-        MqttConnector connectorOut = null;
+        MqttConnector connector = null;
 
         try {
             final Config config = ConfigParser.createConfig();
-            final Optional<Credentials> credentialsIn = Credentials.readMqttCredentials(config, "mqtt-broker-in");
-            final Optional<Credentials> credentialsOut = Credentials.readMqttCredentials(config, "mqtt-broker-out");
+            final Optional<Credentials> credentials = Credentials.readMqttCredentials(config, "mqtt-broker-in");
 
             log.info("Configurations read, connecting.");
 
-            connectorIn = new MqttConnector(config, "mqtt-broker-in", credentialsIn);
-            connectorOut = new MqttConnector(config, "mqtt-broker-out", credentialsOut);
+            connector = new MqttConnector(config, "mqtt-broker-in", credentials);
 
-            final MessageProcessor processor = new MessageProcessor(config, connectorIn, connectorOut);
+            final MessageProcessor processor = new MessageProcessor(config, connector);
             //Let's subscribe to connector before connecting so we'll get all the events.
-            connectorIn.subscribe(processor);
+            connector.subscribe(processor);
 
-            connectorOut.connect();
-            final long now = System.currentTimeMillis();
-            final long timeout = 10000; // 10 seconds
-            while (!connectorOut.client.isConnected()) {
-                if (System.currentTimeMillis() - now > timeout) {
-                    throw new Exception("Failed to connect MQTT client (out) within timeout");
-                }
-                Thread.sleep(1000);
-            }
-            connectorIn.connect();
+            connector.connect();
 
             log.info("Connections established, let's process some messages");
         }
         catch (Exception e) {
             log.error("Exception at main", e);
-            if (connectorIn != null) {
-                connectorIn.close();
-            }
-            if (connectorOut != null) {
-                connectorOut.close();
+            if (connector != null) {
+                connector.close();
             }
         }
     }
