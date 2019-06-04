@@ -89,30 +89,22 @@ public class MessageProcessor implements IMqttMessageHandler {
 
     }
 
-    public static String downgradeTopic(final String topic) throws Exception {
-        final String[] parts = topic.split("/", -1); // -1 to include empty substrings
-        final int versionIndex = HfpParser.findVersionIndex(parts);
-        if (versionIndex < 0) {
-            throw new Exception("Failed to find topic version from topic: " + topic);
+    public static String downgradeTopic(final MqttTopic topic) throws Exception {
+        final String topicStr = topic.toString();
+        final Matcher matcher = topicPattern.matcher(topicStr);
+        String convertedTopic;
+        if (matcher.matches() && matcher.groupCount() == 2) {
+            final String middle = matcher.group(1);
+            final String rest = matcher.group(2);
+            StringBuilder builder = new StringBuilder();
+            builder.append("/hfp/v1");
+            builder.append(middle);
+            builder.append(rest);
+            convertedTopic = builder.toString();
+        } else {
+            throw new Exception(String.format("Failed to parse topic %s", topicStr));
         }
-        final String versionStr = parts[versionIndex];
-        if (!versionStr.equals("v2")) {
-            throw new Exception("Topic version is not v2: " + topic);
-        }
-        parts[versionIndex] = "v1";
-        final String[] start = Arrays.copyOfRange(parts, 0, 5);
-        final String[] end = Arrays.copyOfRange(parts, 6, parts.length);
-        return String.join("/", start) + "/" + String.join("/", end);
-    }
-
-    private void publish(final String topic, final byte[] payload) throws Exception {
-        try {
-            connectorOut.client.publish(topic, payload, connectorOut.qos, connectorOut.retainMessage);
-        }
-        catch (Exception e) {
-            log.error("Error publishing MQTT message", e);
-            throw e;
-        }
+        return convertedTopic;
     }
 
     @Override
