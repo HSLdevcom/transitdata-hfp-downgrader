@@ -2,7 +2,6 @@ package fi.hsl.transitdata.hfp.downgrader;
 
 import com.hivemq.client.mqtt.MqttClient;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
-import com.hivemq.client.mqtt.datatypes.MqttTopic;
 import com.hivemq.client.mqtt.mqtt3.Mqtt3AsyncClient;
 import com.hivemq.client.mqtt.mqtt3.Mqtt3ClientBuilder;
 import com.hivemq.client.mqtt.mqtt3.message.connect.Mqtt3ConnectBuilder;
@@ -23,10 +22,11 @@ public class MqttConnector {
     private static final Logger log = LoggerFactory.getLogger(MqttConnector.class);
 
     public String mqttTopic;
-    public final int qos;
+    public final MqttQos qos;
     public final String clientId;
     public final String broker;
     public final int port;
+    public final boolean useSsl;
     public final boolean retainMessage;
     public final boolean cleanSession;
     public final int keepAlive;
@@ -42,7 +42,7 @@ public class MqttConnector {
         } catch (ConfigException.Missing e) {
             log.warn("Topic config is missing {}", mqttConfigRoot + ".topic");
         }
-        qos = config.getInt(mqttConfigRoot + ".qos");
+        qos = MqttQos.fromCode(config.getInt(mqttConfigRoot + ".qos"));
         clientId = createClientId(config, mqttConfigRoot);
         broker = config.getString(mqttConfigRoot + ".host");
         port = config.getInt(mqttConfigRoot + ".port");
@@ -50,7 +50,8 @@ public class MqttConnector {
 
         final int maxInFlight = config.getInt(mqttConfigRoot + ".maxInflight");
         cleanSession = config.getBoolean(mqttConfigRoot + ".cleanSession");
-        keepAlive = 60;
+        useSsl = config.getBoolean(mqttConfigRoot + ".useSsl");
+        keepAlive = config.getInt(mqttConfigRoot + ".keepAlive");
 
         this.maybeCredentials = maybeCredentials;
     }
@@ -76,7 +77,7 @@ public class MqttConnector {
                     .serverHost(broker)
                     .serverPort(port);
 
-            if (port == 8883) {
+            if (useSsl) {
                 builder.useSslWithDefaultConfig();
             }
 
@@ -109,7 +110,7 @@ public class MqttConnector {
     public CompletableFuture<Mqtt3SubAck> subscribe() {
         return client.subscribeWith()
                 .topicFilter(mqttTopic)
-                .qos(MqttQos.AT_MOST_ONCE)
+                .qos(qos)
                 .callback(mqtt3Publish -> {
                     try {
                         messageArrived(mqtt3Publish);
@@ -133,7 +134,7 @@ public class MqttConnector {
     public CompletableFuture<Mqtt3Publish> publish(final String topic, final byte[] payload) {
         return client.publishWith()
                 .topic(topic)
-                .qos(MqttQos.AT_MOST_ONCE)
+                .qos(qos)
                 .retain(retainMessage)
                 .payload(payload)
                 .send()
