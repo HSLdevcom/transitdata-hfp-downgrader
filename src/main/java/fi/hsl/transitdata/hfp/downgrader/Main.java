@@ -29,20 +29,17 @@ public class Main {
 
             final MessageProcessor processor = new MessageProcessor(config, connectorIn, connectorOut);
             //Let's subscribe to connector before connecting so we'll get all the events.
-            connectorIn.subscribe(processor);
+            connectorIn.addHandler(processor);
 
             connectorOut.connect();
-            final long now = System.currentTimeMillis();
-            final long timeout = 10000; // 10 seconds
-            while (!connectorOut.client.isConnected()) {
-                if (System.currentTimeMillis() - now > timeout) {
-                    throw new Exception("Failed to connect MQTT client (out) within timeout");
-                }
-                Thread.sleep(1000);
-            }
+            blockUntilConnected(connectorOut, 10000, 1000);
+
             connectorIn.connect();
+            blockUntilConnected(connectorIn, 10000, 1000);
 
             log.info("Connections established, let's process some messages");
+
+            connectorIn.subscribe();
         }
         catch (Exception e) {
             log.error("Exception at main", e);
@@ -52,6 +49,16 @@ public class Main {
             if (connectorOut != null) {
                 connectorOut.close();
             }
+        }
+    }
+
+    private static void blockUntilConnected(final MqttConnector connector, final long timeout, final long interval) throws Exception {
+        final long now = System.currentTimeMillis();
+        while (!connector.isConnected()) {
+            if (System.currentTimeMillis() - now > timeout) {
+                throw new Exception(String.format("Failed to connect MQTT client (%s) within timeout", connector.clientId));
+            }
+            Thread.sleep(interval);
         }
     }
 }
