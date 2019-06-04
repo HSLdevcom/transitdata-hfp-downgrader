@@ -1,22 +1,28 @@
 package fi.hsl.transitdata.hfp.downgrader;
 
+import com.hivemq.client.mqtt.datatypes.MqttTopic;
+import com.hivemq.client.mqtt.mqtt3.message.publish.Mqtt3Publish;
 import com.typesafe.config.Config;
-import fi.hsl.common.hfp.HfpParser;
 
-import org.eclipse.paho.client.mqttv3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MessageProcessor implements IMqttMessageHandler {
     private static final Logger log = LoggerFactory.getLogger(MessageProcessor.class);
+
+    private static final Pattern topicPattern = Pattern.compile("^\\/hfp\\/v2(\\/\\w*\\/\\w*)\\/vp(.*)$");
 
     final MqttConnector connectorIn;
     final MqttConnector connectorOut;
 
     private boolean shutdownInProgress = false;
+    private final AtomicInteger inFlightCounter = new AtomicInteger(0);
+    private int msgCounter = 0;
 
     private final int IN_FLIGHT_ALERT_THRESHOLD;
     private final int MSG_MONITORING_INTERVAL;
@@ -36,33 +42,47 @@ public class MessageProcessor implements IMqttMessageHandler {
     }
 
     @Override
-    public void handleMessage(final String topic, final MqttMessage message) throws Exception {
+    public void handleMessage(final Mqtt3Publish message) throws Exception {
         try {
-            if (!connectorIn.client.isConnected()) {
+            if (!connectorIn.isConnected()) {
                 throw new Exception("MQTT client (in) is no longer connected");
             }
-            if (!connectorOut.client.isConnected()) {
+            if (!connectorOut.isConnected()) {
                 throw new Exception("MQTT client (out) is no longer connected");
             }
 
-            byte[] payload = message.getPayload();
+            byte[] convertedPayload = null;
             if (mapper != null) {
-                payload = mapper.apply(null, payload);
+                convertedPayload = mapper.apply(null, message.getPayloadAsBytes());
             }
 
-            if (payload != null) {
-                final String downgradedTopic = downgradeTopic(topic);
-                publish(downgradedTopic, payload);
+            if (convertedPayload != null) {
+                final String downgradedTopic = downgradeTopic(message.getTopic());
+                connectorOut.publish(downgradedTopic, convertedPayload)
+                        .whenComplete(((mqtt3Publish, throwable) -> {
+                            if (throwable != null) {
+                                //
+                            } else {
+                                inFlightCounter.decrementAndGet();
+                            }
+                        }));
+                int inFlight = inFlightCounter.incrementAndGet();
+                if (++msgCounter % MSG_MONITORING_INTERVAL == 0) {
+                    if (inFlight < 0 || inFlight > IN_FLIGHT_ALERT_THRESHOLD) {
+                        log.error("MQTT client (out) cannot keep up with MQTT client (in)! In flight: {}", inFlight);
+                    }
+                    else {
+                        log.info("Currently messages in flight: {}", inFlight);
+                    }
+                }
             }
             else {
-                log.warn("Cannot forward message because (mapped) content is null");
+                log.warn("Cannot forward message because converted payload is null");
             }
 
         }
         catch (Exception e) {
-            log.error("Error while handling the message", e);
-            // Let's close everything and restart.
-            // Closing the MQTT connection should enable us to receive the same message again.
+            log.error("Error while handling message", e);
             close(true);
             throw e;
         }
@@ -114,7 +134,6 @@ public class MessageProcessor implements IMqttMessageHandler {
             connectorOut.close();
             log.info("MQTT connection closed");
         }
-
-        log.info("Pulsar connection closed");
+        System.exit(0);
     }
 }
