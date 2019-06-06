@@ -8,15 +8,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MessageProcessor implements IMqttMessageHandler {
     private static final Logger log = LoggerFactory.getLogger(MessageProcessor.class);
+
+    private static final Pattern topicPattern = Pattern.compile("^\\/hfp\\/v2(\\/\\w*\\/\\w*)\\/vp(.*)$");
 
     final MqttConnector connectorIn;
     final MqttConnector connectorOut;
 
     private boolean shutdownInProgress = false;
+    private final AtomicInteger inFlightCounter = new AtomicInteger(0);
+    private int msgCounter = 0;
 
     private final int IN_FLIGHT_ALERT_THRESHOLD;
     private final int MSG_MONITORING_INTERVAL;
@@ -45,19 +53,19 @@ public class MessageProcessor implements IMqttMessageHandler {
                 throw new Exception("MQTT client (out) is no longer connected");
             }
 
-            byte[] payload = message.getPayload();
+            final byte[] payload = message.getPayload();
+            byte[] downgradedPayload = null;
             if (mapper != null) {
-                payload = mapper.apply(null, payload);
+                downgradedPayload = mapper.apply(topic, payload);
             }
+            final String downgradedTopic = downgradeTopic(topic);
 
-            if (payload != null) {
-                final String downgradedTopic = downgradeTopic(topic);
-                publish(downgradedTopic, payload);
+            if (downgradedPayload != null && downgradedTopic != null) {
+                publish(downgradedTopic, downgradedPayload);
             }
             else {
-                log.warn("Cannot forward message because (mapped) content is null");
+                log.warn("Cannot publish message because payload and/or topic is null");
             }
-
         }
         catch (Exception e) {
             log.error("Error while handling the message", e);
@@ -69,29 +77,50 @@ public class MessageProcessor implements IMqttMessageHandler {
 
     }
 
-    public static String downgradeTopic(final String topic) throws Exception {
-        final String[] parts = topic.split("/", -1); // -1 to include empty substrings
-        final int versionIndex = HfpParser.findVersionIndex(parts);
-        if (versionIndex < 0) {
-            throw new Exception("Failed to find topic version from topic: " + topic);
+    public static String downgradeTopic(final String topic) {
+        String convertedTopic = null;
+        final Matcher matcher = topicPattern.matcher(topic);
+        if (matcher.matches() && matcher.groupCount() == 2) {
+            final String middle = matcher.group(1);
+            final String rest = matcher.group(2);
+            final StringBuilder builder = new StringBuilder();
+            builder.append("/hfp/v1");
+            builder.append(middle);
+            builder.append(rest);
+            convertedTopic = builder.toString();
+        } else {
+            log.error("Failed to parse downgrade topic {}", topic);
         }
-        final String versionStr = parts[versionIndex];
-        if (!versionStr.equals("v2")) {
-            throw new Exception("Topic version is not v2: " + topic);
-        }
-        parts[versionIndex] = "v1";
-        final String[] start = Arrays.copyOfRange(parts, 0, 5);
-        final String[] end = Arrays.copyOfRange(parts, 6, parts.length);
-        return String.join("/", start) + "/" + String.join("/", end);
+        return convertedTopic;
     }
 
     private void publish(final String topic, final byte[] payload) throws Exception {
         try {
-            connectorOut.client.publish(topic, payload, connectorOut.qos, connectorOut.retainMessage);
+            connectorOut.client.publish(topic, payload, connectorOut.qos, connectorOut.retainMessage, null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken iMqttToken) {
+                    inFlightCounter.decrementAndGet();
+                }
+
+                @Override
+                public void onFailure(IMqttToken iMqttToken, Throwable throwable) {
+                    final List<String> topics = Arrays.asList(iMqttToken.getTopics());
+                    log.error(String.format("Failed to publish message to topics %s"), String.join(", ", topics));
+                }
+            });
         }
         catch (Exception e) {
             log.error("Error publishing MQTT message", e);
             throw e;
+        }
+        int inFlight = inFlightCounter.incrementAndGet();
+        if (++msgCounter % MSG_MONITORING_INTERVAL == 0) {
+            if (inFlight < 0 || inFlight > IN_FLIGHT_ALERT_THRESHOLD) {
+                log.error("MQTT client (out) cannot keep up with MQTT client (in)! In flight: {}", inFlight);
+            }
+            else {
+                log.info("Currently messages in flight: {}", inFlight);
+            }
         }
     }
 

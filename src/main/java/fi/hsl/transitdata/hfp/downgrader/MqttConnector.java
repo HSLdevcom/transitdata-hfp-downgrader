@@ -23,7 +23,7 @@ public class MqttConnector implements MqttCallback {
     private final MqttConnectOptions connectOptions;
     private final LinkedList<IMqttMessageHandler> handlers = new LinkedList<>();
 
-    public MqttClient client;
+    public MqttAsyncClient client;
 
     public MqttConnector(final Config config, final String mqttConfigRoot, final Optional<Credentials> maybeCredentials) {
         try {
@@ -71,11 +71,20 @@ public class MqttConnector implements MqttCallback {
             //Let's use memory persistance to optimize throughput.
             MemoryPersistence memoryPersistence = new MemoryPersistence();
 
-            client = new MqttClient(broker, clientId, memoryPersistence);
+            client = new MqttAsyncClient(broker, clientId, memoryPersistence);
             client.setCallback(this); //Let's add the callback before connecting so we won't lose any messages
 
             log.info(String.format("Connecting to mqtt broker %s", broker));
-            IMqttToken token = client.connectWithResult(connectOptions);
+            final IMqttToken token = client.connect(connectOptions, null, new IMqttActionListener() {
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    log.info("Connected");
+                }
+
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    log.error("Connection failed: ", exception);
+                }
+            });
+            token.waitForCompletion();
 
             log.info("Connection to MQTT completed? {}", token.isComplete());
             if (token.getException() != null) {
