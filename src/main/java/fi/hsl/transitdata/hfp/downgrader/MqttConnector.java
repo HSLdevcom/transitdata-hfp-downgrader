@@ -85,6 +85,7 @@ public class MqttConnector implements MqttCallback {
                 }
             });
             token.waitForCompletion();
+
             log.info("Connection to MQTT completed? {}", token.isComplete());
             if (token.getException() != null) {
                 throw token.getException();
@@ -118,6 +119,7 @@ public class MqttConnector implements MqttCallback {
             handler.connectionLost(cause);
         }
         close();
+        System.exit(1);
     }
 
     @Override
