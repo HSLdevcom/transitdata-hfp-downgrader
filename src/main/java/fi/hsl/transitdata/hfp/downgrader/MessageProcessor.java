@@ -1,7 +1,6 @@
 package fi.hsl.transitdata.hfp.downgrader;
 
 import com.typesafe.config.Config;
-import fi.hsl.common.hfp.HfpParser;
 
 import org.eclipse.paho.client.mqttv3.*;
 import org.slf4j.Logger;
