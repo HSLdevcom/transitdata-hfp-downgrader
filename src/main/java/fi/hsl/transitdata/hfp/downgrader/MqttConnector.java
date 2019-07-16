@@ -119,7 +119,6 @@ public class MqttConnector implements MqttCallback {
             handler.connectionLost(cause);
         }
         close();
-        System.exit(1);
     }
 
     @Override
@@ -140,7 +139,7 @@ public class MqttConnector implements MqttCallback {
         try {
             log.info("Closing MqttConnector resources");
             //Paho doesn't close the connection threads unless we first disconnect and then force-close it.
-            client.disconnectForcibly(5000L);
+            client.disconnectForcibly(1000L, 1000L);
             client.close(true);
             client = null;
         }
