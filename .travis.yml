@@ -25,6 +25,7 @@ env:
     - LOWERCASE_REPO_SLUG="${TRAVIS_REPO_SLUG,,}"
     - DOCKER_LOCAL="${LOWERCASE_REPO_SLUG}:${TRAVIS_COMMIT}"
     - DOCKER_DEV_TAG="${LOWERCASE_REPO_SLUG}:develop"
+    - DOCKER_V2_TO_V2_TAG="${LOWERCASE_REPO_SLUG}:v2-to-v2"
     - BUILD_HASH=$(echo "${TRAVIS_COMMIT}" | cut -c1-7)
 
 before_install:
@@ -42,6 +43,10 @@ deploy:
     script: sh ./.travis/docker_login_tag_push "${DOCKER_LOCAL}" "${DOCKER_DEV_TAG}"
     on:
       branch: develop
+  - provider: script
+    script: sh ./.travis/docker_login_tag_push "${DOCKER_LOCAL}" "${DOCKER_V2_TO_V2_TAG}"
+    on:
+      branch: feat/v2-to-v2
   - provider: script
     script: sh ./.travis/docker_login_tag_semver_push "${DOCKER_LOCAL}" "${LOWERCASE_REPO_SLUG}" "${TRAVIS_TAG}" "${BUILD_HASH}"
     on:

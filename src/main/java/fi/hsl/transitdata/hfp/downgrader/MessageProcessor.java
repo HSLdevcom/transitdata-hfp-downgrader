@@ -53,14 +53,9 @@ public class MessageProcessor implements IMqttMessageHandler {
             }
 
             final byte[] payload = message.getPayload();
-            byte[] downgradedPayload = null;
-            if (mapper != null) {
-                downgradedPayload = mapper.apply(topic, payload);
-            }
-            final String downgradedTopic = downgradeTopic(topic);
 
-            if (downgradedPayload != null && downgradedTopic != null) {
-                publish(downgradedTopic, downgradedPayload);
+            if (topic != null && payload != null) {
+                publish(topic, payload);
             }
             else {
                 log.warn("Cannot publish message because payload and/or topic is null");
