@@ -14,6 +14,7 @@ import java.util.UUID;
 public class MqttConnector implements MqttCallback {
     private static final Logger log = LoggerFactory.getLogger(MqttConnector.class);
 
+    public final String name;
     private String mqttTopic;
     public final int qos;
     private final String clientId;
@@ -26,10 +27,20 @@ public class MqttConnector implements MqttCallback {
     public MqttAsyncClient client;
 
     public MqttConnector(final Config config, final String mqttConfigRoot, final Optional<Credentials> maybeCredentials) {
+        switch (mqttConfigRoot) {
+            case "mqtt-broker-in":
+                name = "in";
+                break;
+            case "mqtt-broker-out":
+                name = "out";
+                break;
+            default:
+                throw new IllegalArgumentException("mqttConfigRoot is neither mqtt-broker-in nor mqtt-broker-out");
+        }
         try {
             mqttTopic = config.getString(mqttConfigRoot + ".topic");
         } catch (ConfigException.Missing e) {
-            log.warn("Topic config is missing {}", mqttConfigRoot + ".topic");
+            log.warn("({}) Topic config is missing {}", name, mqttConfigRoot + ".topic");
         }
         qos = config.getInt(mqttConfigRoot + ".qos");
         clientId = createClientId(config, mqttConfigRoot);
@@ -62,7 +73,7 @@ public class MqttConnector implements MqttCallback {
     public void subscribe(IMqttMessageHandler handler) {
         //let's not subscribe to the actual client. we have our own observables here
         //since we want to provide the disconnected-event via the same interface.
-        log.info("Adding subscription");
+        log.info("({}) Adding subscription", name);
         handlers.add(handler);
     }
 
@@ -74,25 +85,28 @@ public class MqttConnector implements MqttCallback {
             client = new MqttAsyncClient(broker, clientId, memoryPersistence);
             client.setCallback(this); //Let's add the callback before connecting so we won't lose any messages
 
-            log.info(String.format("Connecting to mqtt broker %s", broker));
+            log.info("({}) Connecting to mqtt broker {}", name, broker);
             final IMqttToken token = client.connect(connectOptions, null, new IMqttActionListener() {
                 public void onSuccess(IMqttToken asyncActionToken) {
-                    log.info("Connected");
+                    log.info("({}) Connected", name);
                 }
 
                 public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
-                    log.error("Connection failed: ", exception);
+                    log.error(String.format("(%s) Connection failed", name), exception);
                 }
             });
             token.waitForCompletion();
-
-            log.info("Connection to MQTT completed? {}", token.isComplete());
+            if (token.isComplete()) {
+                log.info("({}) Connection to MQTT completed", name);
+            } else {
+                log.warn("({}) Connection to MQTT is not completed", name);
+            }
             if (token.getException() != null) {
                 throw token.getException();
             }
         }
         catch (Exception e) {
-            log.error("Error connecting to MQTT broker", e);
+            log.error(String.format("(%s) Error connecting to MQTT broker", name), e);
             if (client != null) {
                 //Paho doesn't close the connection threads unless we force-close it.
                 client.close(true);
@@ -102,10 +116,10 @@ public class MqttConnector implements MqttCallback {
 
         if (mqttTopic != null) {
             try {
-                log.info("Subscribing to topic {} with QoS {}", mqttTopic, qos);
+                log.info("({}) Subscribing to topic {} with QoS {}", name, mqttTopic, qos);
                 client.subscribe(mqttTopic, qos);
             } catch (Exception e) {
-                log.error("Error subscribing to MQTT broker", e);
+                log.error(String.format("(%s) Error subscribing to MQTT broker", name), e);
                 close();
                 throw e;
             }
@@ -114,12 +128,11 @@ public class MqttConnector implements MqttCallback {
 
     @Override
     public void connectionLost(Throwable cause) {
-        log.error("Connection to mqtt broker lost, notifying clients", cause);
+        log.error(String.format("(%s) Connection to mqtt broker lost, notifying clients", name), cause);
         for (IMqttMessageHandler handler: handlers) {
             handler.connectionLost(cause);
         }
         close();
-        System.exit(1);
     }
 
     @Override
@@ -134,18 +147,18 @@ public class MqttConnector implements MqttCallback {
 
     public void close() {
         if (client == null) {
-            log.warn("Cannot close mqtt connection since it's null");
+            log.warn("({}) Cannot close mqtt connection since it's null", name);
             return;
         }
         try {
-            log.info("Closing MqttConnector resources");
+            log.info("({}) Closing MqttConnector resources", name);
             //Paho doesn't close the connection threads unless we first disconnect and then force-close it.
-            client.disconnectForcibly(5000L);
+            client.disconnectForcibly(1000L, 1000L);
             client.close(true);
             client = null;
         }
         catch (Exception e) {
-            log.error("Failed to close MQTT client connection", e);
+            log.error(String.format("(%s) Failed to close MQTT client connection", name), e);
         }
     }
 }

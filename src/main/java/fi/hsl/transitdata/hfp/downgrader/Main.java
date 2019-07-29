@@ -30,6 +30,7 @@ public class Main {
             final MessageProcessor processor = new MessageProcessor(config, connectorIn, connectorOut);
             //Let's subscribe to connector before connecting so we'll get all the events.
             connectorIn.subscribe(processor);
+            connectorOut.subscribe(processor);
 
             connectorOut.connect();
             blockUntilConnected(connectorOut, 10000, 1000);

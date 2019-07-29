@@ -1,7 +1,6 @@
 package fi.hsl.transitdata.hfp.downgrader;
 
 import com.typesafe.config.Config;
-import fi.hsl.common.hfp.HfpParser;
 
 import org.eclipse.paho.client.mqttv3.*;
 import org.slf4j.Logger;
@@ -47,10 +46,10 @@ public class MessageProcessor implements IMqttMessageHandler {
     public void handleMessage(final String topic, final MqttMessage message) throws Exception {
         try {
             if (!connectorIn.client.isConnected()) {
-                throw new Exception("MQTT client (in) is no longer connected");
+                throw new Exception("(in) MQTT client is no longer connected");
             }
             if (!connectorOut.client.isConnected()) {
-                throw new Exception("MQTT client (out) is no longer connected");
+                throw new Exception("(out) MQTT client is no longer connected");
             }
 
             final byte[] payload = message.getPayload();
@@ -71,7 +70,7 @@ public class MessageProcessor implements IMqttMessageHandler {
             log.error("Error while handling the message", e);
             // Let's close everything and restart.
             // Closing the MQTT connection should enable us to receive the same message again.
-            close(true);
+            close();
             throw e;
         }
 
@@ -127,23 +126,23 @@ public class MessageProcessor implements IMqttMessageHandler {
     @Override
     public void connectionLost(Throwable cause) {
         log.info("Mqtt connection lost");
-        close(false);
+        close();
     }
 
-    public void close(boolean closeMqtt) {
+    public void close() {
         if (shutdownInProgress) {
             return;
         }
         shutdownInProgress = true;
 
-        log.warn("Closing MessageProcessor resources");
+        log.warn("Closing MessageProcessor");
         //Let's first close the MQTT to stop the event stream.
-        if (closeMqtt) {
-            connectorIn.close();
-            connectorOut.close();
-            log.info("MQTT connection closed");
-        }
+        connectorIn.close();
+        connectorOut.close();
+        log.info("MQTT connections closed");
 
-        log.info("Pulsar connection closed");
+        log.info("MessageProcessor closed");
+        // Exit forcibly just to make sure
+        System.exit(1);
     }
 }
