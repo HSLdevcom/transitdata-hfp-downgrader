@@ -21,7 +21,6 @@ script:
   - set -e
   - ./.travis/check_semver
   - docker build --tag "${DOCKER_LOCAL}" .
-
 env:
   global:
     # Docker Hub cannot handle uppercase characters in repository names. Fix it
