@@ -15,7 +15,12 @@ addons:
 
 cache:
   directories:
-  - $HOME/.m2
+    - ~/.m2
+script:
+  - mvn -f pom.xml clean install
+  - set -e
+  - ./.travis/check_semver
+  - docker build --tag "${DOCKER_LOCAL}"
 
 env:
   global:
@@ -30,11 +35,6 @@ env:
 before_install:
   - docker --version
   - echo "ENV GIT_COMMIT ${TRAVIS_COMMIT}" >> Dockerfile
-
-script:
-  - set -e
-  - ./.travis/check_semver
-  - docker build --tag "${DOCKER_LOCAL}" .
 
 # develop-branch pushes the image with "develop"-tag. Tagged commit will push the image with fully versioned tags
 deploy:
